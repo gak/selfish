@@ -66,7 +66,7 @@ impl GameDeck {
 
     pub fn shuffled(rng: &mut impl Rng) -> Self {
         let mut deck = Self::new();
-        deck.available.shuffle(rng);
+        deck.shuffle(rng);
         deck
     }
 

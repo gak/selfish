@@ -1,5 +1,5 @@
 use crate::{GameCard, PlayerReference};
-use miette::{Diagnostic, SourceSpan};
+use miette::Diagnostic;
 use thiserror::Error;
 
 /// An error specific to a player attempting an action incorrectly.
@@ -19,4 +19,7 @@ pub enum SelfishError {
 
     #[error("Player {0:?} does not exist!")]
     PlayerDoesNotExist(PlayerReference),
+
+    #[error("Invalid discard count. Expected {expected} but got {actual}.")]
+    InvalidDiscardCount { expected: usize, actual: usize },
 }

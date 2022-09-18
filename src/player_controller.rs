@@ -1,6 +1,7 @@
 use crate::actions::BreatheOrTravel;
 use crate::visible_state::VisibleState;
 use crate::{Action, GameCard, PlayerReference};
+use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
@@ -18,6 +19,9 @@ pub trait PlayerController {
 
     /// This is only called if the defender can defend against the attack.
     fn defend(&mut self, action: &Action) -> bool;
+
+    /// When a meteoroid hits the player they might have to discard.
+    fn forced_discard(&mut self, card_count: usize) -> Vec<GameCard>;
 }
 
 pub struct RandomPlayerController {
@@ -52,7 +56,14 @@ impl PlayerController for RandomPlayerController {
     }
 
     fn defend(&mut self, action: &Action) -> bool {
-        todo!()
+        true
+    }
+
+    fn forced_discard(&mut self, card_count: usize) -> Vec<GameCard> {
+        let mut cards = self.visible_state.my_hand.clone();
+        cards.shuffle(&mut self.rng);
+        cards.truncate(card_count);
+        cards
     }
 }
 
@@ -63,7 +74,7 @@ fn random_action(visible_state: &VisibleState) -> Option<Action> {
         .enumerate()
         .map(|(player_reference, player)| (PlayerReference(player_reference), player))
         // Don't try to attack myself.
-        .filter(|(player_reference, visible_player)| player_reference != &visible_state.whose_turn)
+        .filter(|(player_reference, _)| player_reference != &visible_state.whose_turn)
         // Only attack people with cards.
         .filter(|(_, player)| player.hand_size > 0)
         .collect::<Vec<_>>();
@@ -71,13 +82,14 @@ fn random_action(visible_state: &VisibleState) -> Option<Action> {
     let attack_player = match attackable_players.first() {
         Some((player_reference, _)) => player_reference,
         None => return None,
-    };
+    }
+    .to_owned();
 
     for card in &visible_state.my_hand {
         match card {
             GameCard::TractorBeam => {
                 return Some(Action::TractorBeam {
-                    other_player_reference: PlayerReference(0),
+                    other_player_reference: attack_player,
                 });
             }
             // Can't use as an action.
@@ -85,7 +97,9 @@ fn random_action(visible_state: &VisibleState) -> Option<Action> {
             // Can't use as an action.
             GameCard::O2 => {}
             // TODO!
-            _ => todo!(),
+            _ => {
+                println!("RandomPlayerController doesn't know how to play {:?}", card);
+            }
         }
     }
 

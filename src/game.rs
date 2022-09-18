@@ -1,13 +1,14 @@
 use crate::actions::BreatheOrTravel;
 use crate::errors::SelfishError;
 use crate::player_controller::PlayerController;
+use crate::visible_state::VisibleState;
 use crate::{Action, GameCard, GameDeck, Player, SpaceCard, SpaceDeck};
 use miette::bail;
-use owo_colors::{CssColors, DynColor, DynColors, OwoColorize};
+use owo_colors::{CssColors, DynColors, OwoColorize};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PlayerReference(pub usize);
 
 pub struct Game {
@@ -27,9 +28,8 @@ impl Game {
             Some(seed) => ChaCha8Rng::seed_from_u64(seed),
         };
 
+        let space_deck = SpaceDeck::shuffled(&mut rng);
         let mut game_deck = GameDeck::shuffled(&mut rng);
-        let mut space_deck = SpaceDeck::shuffled(&mut rng);
-
         let mut players = Vec::new();
         for _ in 0..controllers.len() {
             let mut player = Player::new();
@@ -60,18 +60,20 @@ impl Game {
     pub fn simulate(&mut self) -> miette::Result<()> {
         loop {
             // Always start at the pickup phase.
-            let card = self.draw_card();
-            self.log(format!("Player picked up a {:?}", card));
+            let card = self.draw_card_phase();
+            self.log(format!("Player picked up a {:?}.", card));
 
             // Keep asking the controller for an action until they don't want to do any more.
-            let mut first = true;
             loop {
-                let controller = self.controller(&self.whose_turn_reference.clone())?;
+                if self.current_player().in_solar_flare() {
+                    break;
+                }
+
+                let visible_state = self.visible_state()?;
+                let controller = self.current_controller()?;
+                controller.update_state(visible_state);
                 let action = match controller.play_action() {
                     None => {
-                        if first {
-                            self.log(format!("Player did not play any action cards."));
-                        }
                         break;
                     }
                     Some(action) => action,
@@ -84,12 +86,14 @@ impl Game {
                     // let us immediately move to the BreatheOrTravel phase.
                     break;
                 }
-
-                first = false;
             }
 
             self.breathe_or_travel()?;
         }
+    }
+
+    fn visible_state(&self) -> miette::Result<VisibleState> {
+        VisibleState::try_from_game(self)
     }
 
     fn next_player(&mut self) {
@@ -117,7 +121,7 @@ impl Game {
             (false, true) => Some(BreatheOrTravel::Travel),
             (true, true) => {
                 // The player has both an O1 and an O2, so ask the controller to play one.
-                Some(self.controller(&whose_turn_reference)?.breathe_or_travel())
+                Some(self.current_controller()?.breathe_or_travel())
             }
         };
 
@@ -127,12 +131,12 @@ impl Game {
             Some(BreatheOrTravel::Breathe) => {
                 player.remove_card(&GameCard::O1)?;
                 self.game_deck.add_to_discard(GameCard::O1);
+                self.log("Player breathed.".to_string());
             }
             Some(BreatheOrTravel::Travel) => {
-                // The player only has an O2, so play it.
                 player.remove_card(&GameCard::O2)?;
-                // player.space.push(self.space_deck.take());
-                println!("TODO: Deal with space");
+                self.log("Player travelled.".to_string());
+                self.add_space()?;
             }
             None => {
                 // The player is dead.
@@ -140,10 +144,85 @@ impl Game {
             }
         }
 
-        self.log(format!("Player played a {:?}", breathe_or_travel));
-
         self.phase = Phase::Pickup;
         self.next_player();
+
+        Ok(())
+    }
+
+    pub fn add_space(&mut self) -> miette::Result<()> {
+        let whose_turn_reference = self.whose_turn_reference;
+        let space_card = self.space_deck.draw();
+
+        let player = self.player_mut(&whose_turn_reference)?;
+        player.space.push(space_card.clone());
+
+        match &space_card {
+            SpaceCard::BlankSpace => {
+                self.log("Player got blank space.".to_string());
+            }
+            SpaceCard::UsefulJunk => {
+                let card = self.draw_card();
+                self.log(format!(
+                    "Player got {:?} and picked up a {:?}.",
+                    space_card, card,
+                ));
+            }
+            SpaceCard::MysteriousNebula => {
+                let card_1 = self.draw_card();
+                let card_2 = self.draw_card();
+                self.log(format!(
+                    "Player got {:?} and picked up a {:?} and a {:?}.",
+                    space_card, card_1, card_2
+                ));
+            }
+            SpaceCard::Hyperspace => {
+                self.log("Player got a hyperspace jump.".to_string());
+                self.add_space()?;
+            }
+            SpaceCard::Meteoroid => {
+                if self.current_player().hand.len() > 6 {
+                    // TODO: Ask the controller to discard two cards.
+                    let controller = self.current_controller()?;
+                    let cards = controller.forced_discard(2);
+                    if cards.len() != 2 {
+                        return Err(SelfishError::InvalidDiscardCount {
+                            expected: 2,
+                            actual: cards.len(),
+                        }
+                        .into());
+                    }
+                    let player = self.current_player();
+                    for card in &cards {
+                        player.remove_card(card)?;
+                    }
+
+                    self.log(format!(
+                        "Player got hit by a meteoroid and had to discard {:?}.",
+                        cards
+                    ));
+                }
+            }
+            SpaceCard::CosmicRadiation => {
+                println!("TODO: Cosmic radiation");
+            }
+            SpaceCard::AsteroidField => {
+                println!("TODO: Asteroid field");
+            }
+            SpaceCard::GravitationalAnomaly => {
+                self.log(
+                    "Player got a gravitational anomaly and moved back one space.".to_string(),
+                );
+                let player = self.current_player();
+                player.space.pop();
+            }
+            SpaceCard::WormHole => {
+                println!("TODO: Wormhole");
+            }
+            SpaceCard::SolarFlare => {
+                // Nothing happens except that they can't use action cards.
+            }
+        }
 
         Ok(())
     }
@@ -213,6 +292,11 @@ impl Game {
         &mut self.players[self.whose_turn_reference.0]
     }
 
+    pub fn current_controller(&mut self) -> miette::Result<&mut Box<dyn PlayerController>> {
+        let player_reference = self.whose_turn_reference;
+        self.controller(&player_reference)
+    }
+
     pub fn controller(
         &mut self,
         player_reference: &PlayerReference,
@@ -225,14 +309,16 @@ impl Game {
         }
     }
 
-    pub fn draw_card(&mut self) -> GameCard {
+    pub fn draw_card_phase(&mut self) -> GameCard {
         assert_eq!(self.phase, Phase::Pickup);
+        let card = self.draw_card();
+        self.phase = Phase::Actions;
+        card
+    }
 
+    fn draw_card(&mut self) -> GameCard {
         let card = self.game_deck.draw(&mut self.rng);
         self.current_player().give(card);
-
-        self.phase = Phase::Actions;
-
         card
     }
 
@@ -260,6 +346,10 @@ impl Game {
             if self.can_player_defend(&other_player_reference)?
                 && self.controller(&other_player_reference)?.defend(&action)
             {
+                self.log(format!(
+                    "{:?} defended against {:?} with a shield.",
+                    other_player_reference, action
+                ));
                 self.player_mut(&other_player_reference)?
                     .remove_card(&GameCard::Shield)?;
                 proceed = false;
@@ -335,7 +425,7 @@ mod tests {
         let mut game = new_game(2);
         // Cheat and put a tractor beam on the top of the deck.
         game.game_deck.add_to_available(GameCard::TractorBeam);
-        game.draw_card();
+        game.draw_card_phase();
         game.action(Action::TractorBeam {
             other_player_reference: PlayerReference(1),
         })

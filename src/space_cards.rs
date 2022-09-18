@@ -1,7 +1,7 @@
 use rand::prelude::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SpaceCard {
     BlankSpace,
     UsefulJunk,
@@ -59,5 +59,12 @@ impl SpaceDeck {
         let mut deck = Self::new();
         deck.0.shuffle(rng);
         deck
+    }
+
+    pub fn draw(&mut self) -> SpaceCard {
+        if self.0.is_empty() {
+            *self = Self::new();
+        }
+        self.0.pop().unwrap()
     }
 }
