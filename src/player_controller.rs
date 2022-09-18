@@ -55,7 +55,7 @@ impl PlayerController for RandomPlayerController {
         }
     }
 
-    fn defend(&mut self, action: &Action) -> bool {
+    fn defend(&mut self, _action: &Action) -> bool {
         true
     }
 

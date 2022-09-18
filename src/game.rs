@@ -3,7 +3,7 @@ use crate::errors::SelfishError;
 use crate::player_controller::PlayerController;
 use crate::visible_state::VisibleState;
 use crate::{Action, GameCard, GameDeck, Player, SpaceCard, SpaceDeck};
-use miette::bail;
+use miette::{bail, WrapErr};
 use owo_colors::{CssColors, DynColors, OwoColorize};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -59,6 +59,10 @@ impl Game {
 
     pub fn simulate(&mut self) -> miette::Result<()> {
         loop {
+            if !self.current_player().alive {
+                continue;
+            }
+
             // Always start at the pickup phase.
             let card = self.draw_card_phase();
             self.log(format!("Player picked up a {:?}.", card));
@@ -129,24 +133,31 @@ impl Game {
         let player = self.player_mut(&whose_turn_reference)?;
         match breathe_or_travel {
             Some(BreatheOrTravel::Breathe) => {
-                player.remove_card(&GameCard::O1)?;
+                player.remove_card(&GameCard::O1).wrap_err("Breathing.")?;
                 self.game_deck.add_to_discard(GameCard::O1);
                 self.log("Player breathed.".to_string());
             }
             Some(BreatheOrTravel::Travel) => {
-                player.remove_card(&GameCard::O2)?;
+                player.remove_card(&GameCard::O2).wrap_err("Travelling.")?;
                 self.log("Player travelled.".to_string());
                 self.add_space()?;
             }
             None => {
-                // The player is dead.
-                todo!("TODO: Deal with dead player");
+                self.player_died(&whose_turn_reference)?;
             }
         }
 
         self.phase = Phase::Pickup;
         self.next_player();
 
+        Ok(())
+    }
+
+    pub fn player_died(&mut self, player_reference: &PlayerReference) -> miette::Result<()> {
+        let player = self.player_mut(player_reference)?;
+        player.alive = false;
+        self.log(format!("Player {} died.", player_reference.0));
+        self.next_player();
         Ok(())
     }
 
@@ -194,13 +205,15 @@ impl Game {
                     }
                     let player = self.current_player();
                     for card in &cards {
-                        player.remove_card(card)?;
+                        player.remove_card(card).wrap_err("Meteoroid.")?;
                     }
 
                     self.log(format!(
                         "Player got hit by a meteoroid and had to discard {:?}.",
                         cards
                     ));
+                } else {
+                    self.log("Player got hit by a meteoroid but had 6 or less cards.".to_string());
                 }
             }
             SpaceCard::CosmicRadiation => {
@@ -242,15 +255,24 @@ impl Game {
     }
 
     pub fn print(&self) {
-        for (idx, p) in self.players.iter().enumerate() {
+        for (idx, player) in self.players.iter().enumerate() {
             let is_turn = self.whose_turn_reference == PlayerReference(idx);
-            let prefix = if is_turn { " * " } else { "   " };
-            let color = if is_turn {
+            let prefix = if !player.alive {
+                " x "
+            } else if is_turn {
+                "-->"
+            } else {
+                "   "
+            };
+
+            let color = if !player.alive {
+                CssColors::OrangeRed
+            } else if is_turn {
                 CssColors::White
             } else {
                 CssColors::Grey
             };
-            println!("{} {:?}", prefix, p.color(color));
+            println!(" {} {:?}", prefix, player.color(color));
         }
     }
 
@@ -260,7 +282,7 @@ impl Game {
     ) -> miette::Result<&mut Player> {
         match self.players.get_mut(player_reference.0) {
             None => {
-                bail!(SelfishError::PlayerDoesNotExist(player_reference.clone(),));
+                bail!(SelfishError::PlayerDoesNotExist(*player_reference,));
             }
             Some(player) => Ok(player),
         }
@@ -273,7 +295,7 @@ impl Game {
     ) -> miette::Result<(&mut Player, &mut ChaCha8Rng)> {
         match self.players.get_mut(player_reference.0) {
             None => {
-                bail!(SelfishError::PlayerDoesNotExist(player_reference.clone(),));
+                bail!(SelfishError::PlayerDoesNotExist(*player_reference,));
             }
             Some(player) => Ok((player, &mut self.rng)),
         }
@@ -282,7 +304,7 @@ impl Game {
     pub fn player(&self, player_reference: &PlayerReference) -> miette::Result<&Player> {
         match self.players.get(player_reference.0) {
             None => {
-                bail!(SelfishError::PlayerDoesNotExist(player_reference.clone(),));
+                bail!(SelfishError::PlayerDoesNotExist(*player_reference));
             }
             Some(player) => Ok(player),
         }
@@ -303,7 +325,7 @@ impl Game {
     ) -> miette::Result<&mut Box<dyn PlayerController>> {
         match self.controllers.get_mut(player_reference.0) {
             None => {
-                bail!(SelfishError::PlayerDoesNotExist(player_reference.clone(),));
+                bail!(SelfishError::PlayerDoesNotExist(*player_reference,));
             }
             Some(controller) => Ok(controller),
         }
@@ -351,7 +373,8 @@ impl Game {
                     other_player_reference, action
                 ));
                 self.player_mut(&other_player_reference)?
-                    .remove_card(&GameCard::Shield)?;
+                    .remove_card(&GameCard::Shield)
+                    .wrap_err("Controller requested to defend with shield.")?;
                 proceed = false;
             }
         }
@@ -375,7 +398,9 @@ impl Game {
     }
 
     pub fn discard(&mut self, card: &GameCard) -> miette::Result<()> {
-        self.current_player().remove_card(card)?;
+        self.current_player()
+            .remove_card(card)
+            .wrap_err_with(|| format!("Discarding {:?}", &card))?;
         self.game_deck.add_to_discard(GameCard::O1);
         Ok(())
     }

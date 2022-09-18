@@ -5,6 +5,7 @@ use rand::Rng;
 
 #[derive(Debug)]
 pub struct Player {
+    pub alive: bool,
     pub hand: Vec<GameCard>,
 
     /// Cards are pushed to the end as they come in.
@@ -14,6 +15,7 @@ pub struct Player {
 impl Player {
     pub fn new() -> Player {
         Player {
+            alive: true,
             hand: Vec::new(),
             space: Vec::new(),
         }
