@@ -13,6 +13,7 @@ pub struct PlayerReference(pub usize);
 
 pub struct Game {
     rng: ChaCha8Rng,
+    game_over: bool,
     game_deck: GameDeck,
     space_deck: SpaceDeck,
     players: Vec<Player>,
@@ -50,6 +51,7 @@ impl Game {
             controllers,
             whose_turn_reference: PlayerReference(0),
             phase: Phase::Pickup,
+            game_over: false,
         }
     }
 
@@ -58,8 +60,9 @@ impl Game {
     }
 
     pub fn simulate(&mut self) -> miette::Result<()> {
-        loop {
+        while !self.game_over {
             if !self.current_player().alive {
+                self.next_player();
                 continue;
             }
 
@@ -69,6 +72,7 @@ impl Game {
 
             // Keep asking the controller for an action until they don't want to do any more.
             loop {
+                println!("Loop 2");
                 if self.current_player().in_solar_flare() {
                     break;
                 }
@@ -94,6 +98,8 @@ impl Game {
 
             self.breathe_or_travel()?;
         }
+
+        Ok(())
     }
 
     fn visible_state(&self) -> miette::Result<VisibleState> {
@@ -157,8 +163,27 @@ impl Game {
         let player = self.player_mut(player_reference)?;
         player.alive = false;
         self.log(format!("Player {} died.", player_reference.0));
+
+        self.check_game_over();
+
         self.next_player();
         Ok(())
+    }
+
+    pub fn check_game_over(&mut self) {
+        let mut alive_count = 0;
+        for player in &self.players {
+            if player.alive {
+                alive_count += 1;
+            }
+        }
+
+        println!("Alive count: {}", alive_count);
+
+        if alive_count == 1 {
+            self.log("Game over!".to_string());
+            self.game_over = true;
+        }
     }
 
     pub fn add_space(&mut self) -> miette::Result<()> {
