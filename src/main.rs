@@ -1,46 +1,39 @@
-use rand::prelude::SliceRandom;
-use rand::thread_rng;
+use crate::actions::Action;
+use crate::game::PlayerReference;
+use crate::player_controller::{PlayerController, RandomPlayerController};
+use crate::space_cards::{SpaceCard, SpaceDeck};
 use game::Game;
 use game_cards::{GameCard, GameDeck};
 use player::Player;
-use crate::actions::Action;
-use crate::game::PlayerReference;
-use crate::space_cards::{SpaceCard, SpaceDeck};
+use rand::prelude::SliceRandom;
 
-mod game_cards;
-mod space_cards;
 mod actions;
-mod player;
+mod errors;
 mod game;
+mod game_cards;
+mod player;
+mod player_controller;
+mod space_cards;
 
 fn main() -> miette::Result<()> {
-    let mut game = Game::new(4);
+    let mut controllers: Vec<Box<dyn PlayerController>> = Vec::new();
+    for _ in 0..4 {
+        controllers.push(Box::new(RandomPlayerController::new()));
+    }
+    let seed = Some(0);
+    let mut game = Game::new(seed, controllers);
 
     println!("\nNEW GAME!");
     game.print();
 
-    println!("\n{:?}", game.whose_turn);
+    println!("\n{:?}", game.whose_turn_reference);
     game.draw_card();
     game.print();
 
-    game.action(Action::TractorBeam { other_player: PlayerReference(1) })?;
+    game.action(Action::TractorBeam {
+        other_player_reference: PlayerReference(1),
+    })?;
+    game.print();
 
     Ok(())
-}
-
-trait PlayerController {
-    /// Give the player only the information that they would have access to in a real game.
-    ///
-    /// * Whose turn it is
-    /// * The number of cards in each player's hand
-    /// * The space grid.
-    // TODO: fn update_state(&mut self, state: &VisibleState);
-
-    fn play_action(&mut self) -> Option<Action>;
-
-    /// This is only called if the defender can defend against the attack.
-    ///
-    /// * They have a shield.
-    /// * They are not in a nebula.
-    fn defend(&mut self, attacker: PlayerReference, action: Action) -> bool;
 }

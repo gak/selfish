@@ -1,8 +1,11 @@
+use crate::errors::SelfishError;
 use crate::{GameCard, SpaceCard};
+use miette::bail;
+use rand::Rng;
 
 #[derive(Debug)]
 pub struct Player {
-    hand: Vec<GameCard>,
+    pub(crate) hand: Vec<GameCard>,
 
     /// Cards are pushed to the end as they come in.
     space: Vec<SpaceCard>,
@@ -20,9 +23,34 @@ impl Player {
         self.hand.push(card);
     }
 
-    /// This will panic if the player doesn't have the card.
-    pub fn remove_card(&mut self, card: GameCard) {
-        let index = self.hand.iter().position(|c| *c == card).unwrap();
+    /// Remove a card from the player's hand.
+    pub fn remove_card(&mut self, card: GameCard) -> miette::Result<()> {
+        let index = self
+            .hand
+            .iter()
+            .position(|c| *c == card)
+            .ok_or(SelfishError::PlayerDoesNotHaveThisCard(card))?;
+
         self.hand.remove(index);
+
+        Ok(())
+    }
+
+    /// Will return an error if the player does not have any cards.
+    pub fn remove_random_card(&mut self, rng: &mut impl Rng) -> miette::Result<GameCard> {
+        if self.hand.len() == 0 {
+            bail!(SelfishError::PlayerHasNoCardsLeft);
+        }
+
+        let index = rng.gen_range(0..self.hand.len());
+        Ok(self.hand.remove(index))
+    }
+
+    pub fn last_space_card(&self) -> Option<SpaceCard> {
+        self.space.last().cloned()
+    }
+
+    pub fn in_solar_flare(&self) -> bool {
+        self.last_space_card() == Some(SpaceCard::SolarFlare)
     }
 }

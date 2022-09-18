@@ -1,5 +1,5 @@
-use rand::thread_rng;
 use rand::prelude::SliceRandom;
+use rand::Rng;
 
 #[derive(Debug, PartialEq)]
 pub enum GameCard {
@@ -58,17 +58,20 @@ impl GameDeck {
             available.push(GameCard::Tether);
         }
 
-        Self { available, discard: Vec::new() }
+        Self {
+            available,
+            discard: Vec::new(),
+        }
     }
 
-    pub fn shuffled() -> Self {
+    pub fn shuffled(rng: &mut impl Rng) -> Self {
         let mut deck = Self::new();
-        deck.available.shuffle(&mut thread_rng());
+        deck.available.shuffle(rng);
         deck
     }
 
-    pub fn shuffle(&mut self) {
-        self.available.shuffle(&mut thread_rng());
+    pub fn shuffle(&mut self, rng: &mut impl Rng) {
+        self.available.shuffle(rng);
     }
 
     /// Used for initial deal only. Will panic if the card isn't in the deck!
@@ -78,10 +81,10 @@ impl GameDeck {
     }
 
     /// If there are no cards left, move the discard pile into the available pile and shuffle.
-    pub fn draw(&mut self) -> GameCard {
+    pub fn draw(&mut self, rng: &mut impl Rng) -> GameCard {
         if self.available.is_empty() {
             self.available.append(&mut self.discard);
-            self.available.shuffle(&mut thread_rng());
+            self.available.shuffle(rng);
             self.discard.clear();
         }
         self.available.pop().unwrap()
