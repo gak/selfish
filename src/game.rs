@@ -7,6 +7,7 @@ use miette::{bail, WrapErr};
 use owo_colors::{CssColors, DynColors, OwoColorize};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use std::mem::swap;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PlayerReference(pub usize);
@@ -72,7 +73,6 @@ impl Game {
 
             // Keep asking the controller for an action until they don't want to do any more.
             loop {
-                println!("Loop 2");
                 if self.current_player().in_solar_flare() {
                     break;
                 }
@@ -145,11 +145,15 @@ impl Game {
             }
             Some(BreatheOrTravel::Travel) => {
                 player.remove_card(&GameCard::O2).wrap_err("Travelling.")?;
+                self.game_deck.add_to_discard(GameCard::O1);
                 self.log("Player travelled.".to_string());
                 self.add_space()?;
             }
             None => {
-                self.player_died(&whose_turn_reference)?;
+                self.player_died(
+                    &whose_turn_reference,
+                    "they didn't have any oxygen cards left.",
+                )?;
             }
         }
 
@@ -159,10 +163,17 @@ impl Game {
         Ok(())
     }
 
-    pub fn player_died(&mut self, player_reference: &PlayerReference) -> miette::Result<()> {
+    pub fn player_died(
+        &mut self,
+        player_reference: &PlayerReference,
+        reason: &str,
+    ) -> miette::Result<()> {
         let player = self.player_mut(player_reference)?;
         player.alive = false;
-        self.log(format!("Player {} died.", player_reference.0));
+        self.log(format!(
+            "Player {} died because {}.",
+            player_reference.0, reason
+        ));
 
         self.check_game_over();
 
@@ -228,9 +239,10 @@ impl Game {
                         }
                         .into());
                     }
-                    let player = self.current_player();
                     for card in &cards {
+                        let player = self.current_player();
                         player.remove_card(card).wrap_err("Meteoroid.")?;
+                        self.game_deck.add_to_discard(*card);
                     }
 
                     self.log(format!(
@@ -242,10 +254,13 @@ impl Game {
                 }
             }
             SpaceCard::CosmicRadiation => {
-                println!("TODO: Cosmic radiation");
+                // The player must discard an oxygen to survive.
+                self.discard_or_die(GameCard::O1, "cosmic radiation")?;
             }
             SpaceCard::AsteroidField => {
-                println!("TODO: Asteroid field");
+                for _ in 0..2 {
+                    self.discard_or_die(GameCard::O1, "asteroid field")?;
+                }
             }
             SpaceCard::GravitationalAnomaly => {
                 self.log(
@@ -255,13 +270,45 @@ impl Game {
                 player.space.pop();
             }
             SpaceCard::WormHole => {
-                println!("TODO: Wormhole");
+                let controller = self.current_controller()?;
+                let target_reference = controller.choose_player_to_swap_with();
+                let whose_turn_reference = self.whose_turn_reference;
+                self.swap_space(&whose_turn_reference, &target_reference)?;
+                self.log(format!(
+                    "Player got a wormhole and swapped spaces with player {}.",
+                    target_reference.0
+                ));
             }
             SpaceCard::SolarFlare => {
                 // Nothing happens except that they can't use action cards.
             }
         }
 
+        Ok(())
+    }
+
+    pub fn swap_space(&mut self, p1: &PlayerReference, p2: &PlayerReference) -> miette::Result<()> {
+        let p1_space = self.player(p1)?.space.clone();
+        let p2_space = self.player(p2)?.space.clone();
+
+        self.player_mut(p1)?.space = p2_space;
+        self.player_mut(p2)?.space = p1_space;
+
+        Ok(())
+    }
+
+    pub fn discard_or_die(&mut self, card: GameCard, reason: &str) -> miette::Result<()> {
+        let whose_turn_reference = self.whose_turn_reference;
+        let player = self.current_player();
+
+        // TODO: Automatically try to swap an O2 for two O1's.
+        if player.has_card(&card) {
+            player.remove_card(&card)?;
+            self.game_deck.add_to_discard(card);
+            self.log("Player survived cosmic radiation.".to_string());
+        } else {
+            self.player_died(&whose_turn_reference, reason)?;
+        }
         Ok(())
     }
 
@@ -400,6 +447,7 @@ impl Game {
                 self.player_mut(&other_player_reference)?
                     .remove_card(&GameCard::Shield)
                     .wrap_err("Controller requested to defend with shield.")?;
+                self.game_deck.add_to_discard(GameCard::Shield);
                 proceed = false;
             }
         }
@@ -407,7 +455,7 @@ impl Game {
         if proceed {
             match action {
                 Action::TractorBeam {
-                    other_player_reference,
+                    target: other_player_reference,
                 } => {
                     let random_card = self.remove_random_card(&other_player_reference)?;
                     self.current_player().give(random_card);
@@ -441,8 +489,8 @@ impl Game {
         &mut self,
         player_reference: &PlayerReference,
     ) -> miette::Result<GameCard> {
-        let (other_player, rng) = self.player_mut_rng(&player_reference)?;
-        Ok(other_player.remove_random_card(rng)?)
+        let (other_player, rng) = self.player_mut_rng(player_reference)?;
+        other_player.remove_random_card(rng)
     }
 }
 
@@ -477,7 +525,7 @@ mod tests {
         game.game_deck.add_to_available(GameCard::TractorBeam);
         game.draw_card_phase();
         game.action(Action::TractorBeam {
-            other_player_reference: PlayerReference(1),
+            target: PlayerReference(1),
         })
         .unwrap();
         game.print();

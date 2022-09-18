@@ -1,5 +1,5 @@
 use crate::actions::BreatheOrTravel;
-use crate::visible_state::VisibleState;
+use crate::visible_state::{VisiblePlayer, VisibleState};
 use crate::{Action, GameCard, PlayerReference};
 use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -22,6 +22,9 @@ pub trait PlayerController {
 
     /// When a meteoroid hits the player they might have to discard.
     fn forced_discard(&mut self, card_count: usize) -> Vec<GameCard>;
+
+    /// Wormholes make you swap with another player.
+    fn choose_player_to_swap_with(&mut self) -> PlayerReference;
 }
 
 pub struct RandomPlayerController {
@@ -65,22 +68,43 @@ impl PlayerController for RandomPlayerController {
         cards.truncate(card_count);
         cards
     }
+
+    fn choose_player_to_swap_with(&mut self) -> PlayerReference {
+        let targets = potential_targets(&self.visible_state, false, 0);
+        let target = targets.choose(&mut self.rng).unwrap();
+        *target
+    }
+}
+
+fn potential_targets(
+    visible_state: &VisibleState,
+    needs_to_be_alive: bool,
+    needs_cards: usize,
+) -> Vec<PlayerReference> {
+    let mut found = Vec::new();
+    for (idx, player) in visible_state.players.iter().enumerate() {
+        let player_reference = PlayerReference(idx);
+
+        if player_reference == visible_state.whose_turn {
+            continue;
+        }
+        if needs_to_be_alive && !player.alive {
+            continue;
+        }
+        if needs_cards > 0 && player.hand_size < needs_cards {
+            continue;
+        }
+
+        found.push(player_reference);
+    }
+
+    found
 }
 
 fn random_action(visible_state: &VisibleState) -> Option<Action> {
-    let attackable_players = visible_state
-        .players
-        .iter()
-        .enumerate()
-        .map(|(player_reference, player)| (PlayerReference(player_reference), player))
-        // Don't try to attack myself.
-        .filter(|(player_reference, _)| player_reference != &visible_state.whose_turn)
-        // Only attack people with cards.
-        .filter(|(_, player)| player.hand_size > 0)
-        .collect::<Vec<_>>();
-
-    let attack_player = match attackable_players.first() {
-        Some((player_reference, _)) => player_reference,
+    let targets = potential_targets(visible_state, true, 1);
+    let target = match targets.first() {
+        Some(player_reference) => player_reference,
         None => return None,
     }
     .to_owned();
@@ -88,9 +112,7 @@ fn random_action(visible_state: &VisibleState) -> Option<Action> {
     for card in &visible_state.my_hand {
         match card {
             GameCard::TractorBeam => {
-                return Some(Action::TractorBeam {
-                    other_player_reference: attack_player,
-                });
+                return Some(Action::TractorBeam { target });
             }
             // Can't use as an action.
             GameCard::O1 => {}

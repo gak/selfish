@@ -12,6 +12,7 @@ pub struct VisibleState {
 }
 
 pub struct VisiblePlayer {
+    pub alive: bool,
     pub hand_size: usize,
     pub space: Vec<SpaceCard>,
 }
@@ -25,6 +26,7 @@ impl VisibleState {
                 Ok(VisiblePlayer {
                     hand_size: player.hand.len(),
                     space: player.space.clone(),
+                    alive: player.alive,
                 })
             })
             .collect::<miette::Result<Vec<VisiblePlayer>>>()?;

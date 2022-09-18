@@ -9,9 +9,7 @@ pub enum BreatheOrTravel {
 
 #[derive(Debug)]
 pub enum Action {
-    TractorBeam {
-        other_player_reference: PlayerReference,
-    },
+    TractorBeam { target: PlayerReference },
 }
 
 impl Action {
@@ -24,7 +22,7 @@ impl Action {
     pub fn attacking(&self) -> Option<PlayerReference> {
         match self {
             Action::TractorBeam {
-                other_player_reference,
+                target: other_player_reference,
             } => Some(*other_player_reference),
         }
     }
