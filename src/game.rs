@@ -3,6 +3,7 @@ use crate::errors::SelfishError;
 use crate::player_controller::PlayerController;
 use crate::{Action, GameCard, GameDeck, Player, SpaceCard, SpaceDeck};
 use miette::bail;
+use owo_colors::{CssColors, DynColor, DynColors, OwoColorize};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -60,26 +61,31 @@ impl Game {
         loop {
             // Always start at the pickup phase.
             let card = self.draw_card();
-            println!("Player picked up a {:?}", card);
-            self.print();
+            self.log(format!("Player picked up a {:?}", card));
 
             // Keep asking the controller for an action until they don't want to do any more.
+            let mut first = true;
             loop {
                 let controller = self.controller(&self.whose_turn_reference.clone())?;
                 let action = match controller.play_action() {
                     None => {
+                        if first {
+                            self.log(format!("Player did not play any action cards."));
+                        }
                         break;
                     }
                     Some(action) => action,
                 };
 
                 if let Err(err) = self.action(action) {
-                    println!("Controller tried to do an invalid action: {}", err);
+                    self.log(format!("Controller tried to do an invalid action: {}", err));
 
                     // We are not patient enough for controllers that don't know how to play, so
                     // let us immediately move to the BreatheOrTravel phase.
                     break;
                 }
+
+                first = false;
             }
 
             self.breathe_or_travel()?;
@@ -115,9 +121,6 @@ impl Game {
             }
         };
 
-        println!("Player is going to {:?}", breathe_or_travel);
-        self.print();
-
         // Player is re-borrowed here because the controller needed it.
         let player = self.player_mut(&whose_turn_reference)?;
         match breathe_or_travel {
@@ -137,20 +140,38 @@ impl Game {
             }
         }
 
+        self.log(format!("Player played a {:?}", breathe_or_travel));
+
         self.phase = Phase::Pickup;
         self.next_player();
 
         Ok(())
     }
 
+    pub fn color(&self, player_reference: &PlayerReference) -> DynColors {
+        let colors: [DynColors; 6] = [
+            "#B83AF1", "#6EB122", "#DAAC06", "#00938A", "#E23838", "#A23450",
+        ]
+        .map(|color| color.parse().unwrap());
+
+        colors[player_reference.0]
+    }
+
+    pub fn log(&self, note: String) {
+        println!("\n{}", note.color(self.color(&self.whose_turn_reference)));
+        self.print();
+    }
+
     pub fn print(&self) {
         for (idx, p) in self.players.iter().enumerate() {
-            let turn = if self.whose_turn_reference == PlayerReference(idx) {
-                " * "
+            let is_turn = self.whose_turn_reference == PlayerReference(idx);
+            let prefix = if is_turn { " * " } else { "   " };
+            let color = if is_turn {
+                CssColors::White
             } else {
-                "   "
+                CssColors::Grey
             };
-            println!("{} {:?}", turn, p);
+            println!("{} {:?}", prefix, p.color(color));
         }
     }
 

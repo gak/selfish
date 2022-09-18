@@ -271,6 +271,7 @@ name = "selfish"
 version = "0.1.0"
 dependencies = [
  "miette",
+ "owo-colors",
  "rand",
  "rand_chacha",
  "thiserror",
