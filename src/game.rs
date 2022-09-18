@@ -69,6 +69,18 @@ impl Game {
         }
     }
 
+    pub fn player_mut_rng(
+        &mut self,
+        player_reference: &PlayerReference,
+    ) -> miette::Result<(&mut Player, &mut ChaCha8Rng)> {
+        match self.players.get_mut(player_reference.0) {
+            None => {
+                bail!(SelfishError::PlayerDoesNotExist(player_reference.clone(),));
+            }
+            Some(player) => Ok((player, &mut self.rng)),
+        }
+    }
+
     pub fn player(&self, player_reference: &PlayerReference) -> miette::Result<&Player> {
         match self.players.get(player_reference.0) {
             None => {
@@ -161,8 +173,8 @@ impl Game {
         &mut self,
         player_reference: &PlayerReference,
     ) -> miette::Result<GameCard> {
-        let other_player = self.player_mut(&player_reference)?;
-        Ok(other_player.remove_random_card(&mut self.rng)?)
+        let (other_player, rng) = self.player_mut_rng(&player_reference)?;
+        Ok(other_player.remove_random_card(rng)?)
     }
 }
 
@@ -171,4 +183,37 @@ enum Phase {
     Pickup,
     Actions,
     Breath,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RandomPlayerController;
+    use rand::{thread_rng, Rng};
+
+    fn new_game(players: usize) -> Game {
+        let seed = Some(thread_rng().gen());
+        println!("Seed: {:?}", seed);
+
+        let mut controllers: Vec<Box<dyn PlayerController>> = Vec::new();
+        for _ in 0..players {
+            controllers.push(Box::new(RandomPlayerController::new()));
+        }
+        Game::new(seed, controllers)
+    }
+
+    #[test]
+    fn test_tractor_beam() {
+        let mut game = new_game(2);
+        // Cheat and put a tractor beam on the top of the deck.
+        game.game_deck.push(GameCard::TractorBeam);
+        game.draw_card();
+        game.action(Action::TractorBeam {
+            other_player_reference: PlayerReference(1),
+        })
+        .unwrap();
+        game.print();
+        assert_eq!(game.player(&PlayerReference(0)).unwrap().hand.len(), 6);
+        assert_eq!(game.player(&PlayerReference(1)).unwrap().hand.len(), 4);
+    }
 }

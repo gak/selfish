@@ -93,4 +93,8 @@ impl GameDeck {
     pub fn discard(&mut self, card: GameCard) {
         self.discard.push(card);
     }
+
+    pub fn push(&mut self, card: GameCard) {
+        self.available.push(card);
+    }
 }
