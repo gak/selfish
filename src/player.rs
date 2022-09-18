@@ -5,10 +5,10 @@ use rand::Rng;
 
 #[derive(Debug)]
 pub struct Player {
-    pub(crate) hand: Vec<GameCard>,
+    pub hand: Vec<GameCard>,
 
     /// Cards are pushed to the end as they come in.
-    space: Vec<SpaceCard>,
+    pub space: Vec<SpaceCard>,
 }
 
 impl Player {
@@ -23,13 +23,17 @@ impl Player {
         self.hand.push(card);
     }
 
+    pub fn has_card(&self, card: &GameCard) -> bool {
+        self.hand.contains(card)
+    }
+
     /// Remove a card from the player's hand.
-    pub fn remove_card(&mut self, card: GameCard) -> miette::Result<()> {
+    pub fn remove_card(&mut self, card: &GameCard) -> miette::Result<()> {
         let index = self
             .hand
             .iter()
-            .position(|c| *c == card)
-            .ok_or(SelfishError::PlayerDoesNotHaveThisCard(card))?;
+            .position(|c| c == card)
+            .ok_or(SelfishError::PlayerDoesNotHaveThisCard(*card))?;
 
         self.hand.remove(index);
 

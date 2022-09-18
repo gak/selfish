@@ -1,7 +1,7 @@
 use rand::prelude::SliceRandom;
 use rand::Rng;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GameCard {
     O1,
     O2,
@@ -90,11 +90,13 @@ impl GameDeck {
         self.available.pop().unwrap()
     }
 
-    pub fn discard(&mut self, card: GameCard) {
+    pub fn add_to_discard(&mut self, card: GameCard) {
         self.discard.push(card);
     }
 
-    pub fn push(&mut self, card: GameCard) {
+    // Used for cheating in tests!
+    #[cfg(test)]
+    pub fn add_to_available(&mut self, card: GameCard) {
         self.available.push(card);
     }
 }

@@ -1,11 +1,13 @@
 use crate::game::PlayerReference;
 use crate::GameCard;
 
+#[derive(Debug)]
 pub enum BreatheOrTravel {
     Breathe,
     Travel,
 }
 
+#[derive(Debug)]
 pub enum Action {
     TractorBeam {
         other_player_reference: PlayerReference,
