@@ -421,17 +421,19 @@ impl Game {
 
         let mut proceed = true;
 
+        let rules = action.rules();
+
         if let Some(other_player_reference) = action.attacking() {
             if other_player_reference == self.whose_turn_reference {
                 bail!(SelfishError::CantAttackYourself);
             }
 
             let other_player = self.player_mut(&other_player_reference)?;
-            if let Some(steal_count) = action.stealing() {
-                if steal_count > other_player.hand.len() {
+            if let Some(steal) = action.rules().steal {
+                if steal.count > other_player.hand.len() {
                     bail!(SelfishError::PlayerDoesNotHaveEnoughCards(
                         other_player_reference,
-                        steal_count
+                        steal.count
                     ));
                 }
             }
@@ -454,12 +456,57 @@ impl Game {
 
         if proceed {
             match action {
-                Action::TractorBeam {
-                    target: other_player_reference,
-                } => {
-                    let random_card = self.remove_random_card(&other_player_reference)?;
+                Action::OxygenSiphon { target } => {
+                    self.log(format!("Player will siphon oxygen from {:?}.", target));
+                    let target_player = self.player_mut(&target)?;
+                    match target_player.count_cards(&GameCard::O1) {
+                        0 => {
+                            self.player_died(
+                                &target,
+                                "was attacked by an oxygen siphon and didn't have enough oxygen",
+                            )?;
+                        }
+                        1 => {
+                            self.current_player().give(GameCard::O1);
+                            self.player_died(
+                                &target,
+                                "was attacked by an oxygen siphon and only had 1 oxygen",
+                            )?;
+                        }
+                        _ => {
+                            target_player.remove_card(&GameCard::O1)?;
+                            target_player.remove_card(&GameCard::O1)?;
+                            self.current_player().give(GameCard::O1);
+                        }
+                    }
+                }
+                Action::HackSuit { target } => {
+                    let target_player = self.player(&target)?;
+                    let possible_cards = target_player.unique_cards();
+                    let controller = self.current_controller()?;
+                    let card = controller.choose_card_to_take(possible_cards);
+                    let target_player = self.player_mut(&target)?;
+                    target_player.remove_card(&card)?;
+                    self.current_player().give(card);
+                    self.log(format!(
+                        "Player hacked {:?}'s suit and took a {:?}.",
+                        target, card
+                    ));
+                }
+                Action::TractorBeam { target } => {
+                    let random_card = self.remove_random_card(&target)?;
                     self.current_player().give(random_card);
                 }
+                Action::RocketBooster => {
+                    self.add_space()?;
+                    self.log("Player used a rocket booster.".to_string());
+                }
+                Action::LaserBlast { target } => {
+                    let target_player = self.player_mut(&target)?;
+                    target_player.space.pop();
+                }
+                Action::HoleInSuit { .. } => {}
+                Action::Tether { .. } => {}
             }
         }
 

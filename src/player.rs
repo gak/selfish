@@ -2,6 +2,7 @@ use crate::errors::SelfishError;
 use crate::{GameCard, SpaceCard};
 use miette::bail;
 use rand::Rng;
+use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct Player {
@@ -27,6 +28,14 @@ impl Player {
 
     pub fn has_card(&self, card: &GameCard) -> bool {
         self.hand.contains(card)
+    }
+
+    pub fn count_cards(&self, card: &GameCard) -> usize {
+        self.hand.iter().filter(|c| c == &card).count()
+    }
+
+    pub fn unique_cards(&self) -> HashSet<GameCard> {
+        self.hand.iter().cloned().collect()
     }
 
     /// Remove a card from the player's hand.

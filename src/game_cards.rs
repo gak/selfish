@@ -1,7 +1,7 @@
 use rand::prelude::SliceRandom;
 use rand::Rng;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum GameCard {
     O1,
     O2,

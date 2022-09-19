@@ -4,6 +4,7 @@ use crate::{Action, GameCard, PlayerReference};
 use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::collections::HashSet;
 
 pub trait PlayerController {
     /// Give the player only the information that they would have access to in a real game.
@@ -25,6 +26,9 @@ pub trait PlayerController {
 
     /// Wormholes make you swap with another player.
     fn choose_player_to_swap_with(&mut self) -> PlayerReference;
+
+    /// Hack suit to choose a card to steal.
+    fn choose_card_to_take(&mut self, options: HashSet<GameCard>) -> GameCard;
 }
 
 pub struct RandomPlayerController {
@@ -70,9 +74,13 @@ impl PlayerController for RandomPlayerController {
     }
 
     fn choose_player_to_swap_with(&mut self) -> PlayerReference {
-        let targets = potential_targets(&self.visible_state, false, 0);
+        let targets = potential_targets(&self.visible_state, false, 0, false);
         let target = targets.choose(&mut self.rng).unwrap();
         *target
+    }
+
+    fn choose_card_to_take(&mut self, options: HashSet<GameCard>) -> GameCard {
+        *options.iter().next().unwrap()
     }
 }
 
@@ -80,6 +88,7 @@ fn potential_targets(
     visible_state: &VisibleState,
     needs_to_be_alive: bool,
     needs_cards: usize,
+    needs_to_have_space: bool,
 ) -> Vec<PlayerReference> {
     let mut found = Vec::new();
     for (idx, player) in visible_state.players.iter().enumerate() {
@@ -94,6 +103,9 @@ fn potential_targets(
         if needs_cards > 0 && player.hand_size < needs_cards {
             continue;
         }
+        if needs_to_have_space && player.space.is_empty() {
+            continue;
+        }
 
         found.push(player_reference);
     }
@@ -102,7 +114,7 @@ fn potential_targets(
 }
 
 fn random_action(visible_state: &VisibleState) -> Option<Action> {
-    let targets = potential_targets(visible_state, true, 1);
+    let targets = potential_targets(visible_state, true, 1, false);
     let target = match targets.first() {
         Some(player_reference) => player_reference,
         None => return None,
@@ -111,17 +123,35 @@ fn random_action(visible_state: &VisibleState) -> Option<Action> {
 
     for card in &visible_state.my_hand {
         match card {
+            GameCard::OxygenSiphon => {
+                return Some(Action::OxygenSiphon { target });
+            }
+            GameCard::HackSuit => {
+                return Some(Action::HackSuit { target });
+            }
             GameCard::TractorBeam => {
                 return Some(Action::TractorBeam { target });
+            }
+            GameCard::RocketBooster => {
+                return Some(Action::RocketBooster);
+            }
+            GameCard::LaserBlast => {
+                let target = *potential_targets(visible_state, true, 1, true).first()?;
+                return Some(Action::LaserBlast { target });
+            }
+            GameCard::HoleInSuit => {
+                return Some(Action::HoleInSuit { target });
+            }
+            GameCard::Tether => {
+                let target = *potential_targets(visible_state, true, 1, true).first()?;
+                return Some(Action::Tether { target });
             }
             // Can't use as an action.
             GameCard::O1 => {}
             // Can't use as an action.
             GameCard::O2 => {}
-            // TODO!
-            _ => {
-                println!("RandomPlayerController doesn't know how to play {:?}", card);
-            }
+            // Can't use as an action.
+            GameCard::Shield => {}
         }
     }
 
